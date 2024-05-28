@@ -2,6 +2,7 @@ import pmdarima as pm
 from statsmodels.tsa.arima.model import ARIMA
 from sklearn.metrics import mean_absolute_error
 import yfinance as yf
+import numpy as np
 
 def forecast_stock(stock, period="2y", interval='1d'):
     try:
@@ -30,11 +31,14 @@ def forecast_stock(stock, period="2y", interval='1d'):
         # Dự đoán giá đóng cửa cho ngày tiếp theo
         forecast = model_fit.forecast(steps=1)
 
-        # Tính toán độ chính xác của mô hình (MAE)
-        mae = mean_absolute_error(ts, model_fit.predict())
+        # Tính toán độ chính xác của mô hình (Accuracy)
+        predictions = model_fit.predict()
+        actual = ts['Close'].values
+        correct_direction = np.sum((np.diff(actual) > 0) == (np.diff(predictions) > 0))
+        accuracy = correct_direction / (len(actual) - 1)
         
-        return {'predictions': forecast, 'accuracy': mae}
+        return {'predictions': forecast, 'accuracy': accuracy}
 
     except Exception as e:
         print(f"Lỗi khi dự đoán {stock}: {e}")
-        return {'predictions': [], 'accuracy': None}
+        return {'predictions': [np.nan], 'accuracy': None}
