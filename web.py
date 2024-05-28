@@ -6,6 +6,7 @@ import plotly.express as px
 import yfinance as yf
 from datetime import datetime, timedelta
 from Forecast import forecast_stock
+from statsmodels.tsa.arima.model import ARIMA
 
 st.set_page_config(
     page_title="Dự đoán giá cổ phiếu",
