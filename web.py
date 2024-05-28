@@ -1,112 +1,151 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from keras.models import load_model
 import matplotlib.pyplot as plt
+import plotly.express as px
 import yfinance as yf
+from datetime import datetime, timedelta
+from Forecast import forecast_stock
 
-st.title("Stock Price Predictor App")
-
-stock = st.text_input("Enter the Stock ID", "GOOG")
-
-from datetime import datetime
-end = datetime.now()
-start = datetime(end.year-20,end.month,end.day)
-
-google_data = yf.download(stock, start, end)
-
-model = load_model("Latest_stock_price_model.keras")
-st.subheader("Stock Data")
-st.write(google_data)
-
-splitting_len = int(len(google_data)*0.7)
-x_test = pd.DataFrame(google_data.Close[splitting_len:])
-
-def plot_graph(figsize, values, full_data, extra_data = 0, extra_dataset = None):
-    fig = plt.figure(figsize=figsize)
-    plt.plot(values,'Orange')
-    plt.plot(full_data.Close, 'b')
-    if extra_data:
-        plt.plot(extra_dataset)
-    return fig
-
-st.subheader('Original Close Price and MA for 250 days')
-google_data['MA_for_250_days'] = google_data.Close.rolling(250).mean()
-st.pyplot(plot_graph((15,6), google_data['MA_for_250_days'],google_data,0))
-
-st.subheader('Original Close Price and MA for 200 days')
-google_data['MA_for_200_days'] = google_data.Close.rolling(200).mean()
-st.pyplot(plot_graph((15,6), google_data['MA_for_200_days'],google_data,0))
-
-st.subheader('Original Close Price and MA for 100 days')
-google_data['MA_for_100_days'] = google_data.Close.rolling(100).mean()
-st.pyplot(plot_graph((15,6), google_data['MA_for_100_days'],google_data,0))
-
-st.subheader('Original Close Price and MA for 100 days and MA for 250 days')
-st.pyplot(plot_graph((15,6), google_data['MA_for_100_days'],google_data,1,google_data['MA_for_250_days']))
-
-from sklearn.preprocessing import MinMaxScaler
-
-scaler = MinMaxScaler(feature_range=(0,1))
-scaled_data = scaler.fit_transform(x_test[['Close']])
-
-x_data = []
-y_data = []
-
-for i in range(100,len(scaled_data)):
-    x_data.append(scaled_data[i-100:i])
-    y_data.append(scaled_data[i])
-
-x_data, y_data = np.array(x_data), np.array(y_data)
-
-predictions = model.predict(x_data)
-
-inv_pre = scaler.inverse_transform(predictions)
-inv_y_test = scaler.inverse_transform(y_data)
-
-ploting_data = pd.DataFrame(
- {
-  'original_test_data': inv_y_test.reshape(-1),
-    'predictions': inv_pre.reshape(-1)
- } ,
-    index = google_data.index[splitting_len+100:]
+st.set_page_config(
+    page_title="Dự đoán giá cổ phiếu",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
-st.subheader("Original values vs Predicted values")
-st.write(ploting_data)
 
-st.subheader('Original Close Price vs Predicted Close price')
-fig = plt.figure(figsize=(15,6))
-plt.plot(pd.concat([google_data.Close[:splitting_len+100],ploting_data], axis=0))
-plt.legend(["Data- not used", "Original Test data", "Predicted Test data"])
-st.pyplot(fig)
+st.markdown(
+    """
+<style>
+.sidebar .sidebar-content {
+    background-color: #f0f2f6;
+}
+.main .block-container {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+.stAlert {
+    font-size: 1.1rem;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
-st.subheader("Future Price values")
-# st.write(ploting_data)
+def format_market_cap(market_cap):
+    if market_cap >= 1e12:
+        return f"{market_cap / 1e12:.2f} nghìn tỷ"
+    elif market_cap >= 1e9:
+        return f"{market_cap / 1e9:.2f} tỷ"
+    elif market_cap >= 1e6:
+        return f"{market_cap / 1e6:.2f} triệu"
+    elif market_cap >= 1e3:
+        return f"{market_cap / 1e3:.2f} nghìn"
+    else:
+        return f"{market_cap:.2f}"
 
-last_100 = google_data[['Close']].tail(100)
-last_100 = scaler.fit_transform(last_100['Close'].values.reshape(-1,1)).reshape(1,-1,1)
-prev_100 = np.copy(last_100)
+st.title("Ứng dụng dự đoán giá cổ phiếu")
 
-def predict_future(no_of_days, prev_100):
-    future_predictions = []
-    for i in range(no_of_days):
-        next_day = model.predict(prev_100)
-        prev_100 = np.roll(prev_100, -1)
-        prev_100[0] = next_day  
-        future_predictions.append(scaler.inverse_transform(next_day))
-    return future_predictions
+st.sidebar.header("Lựa chọn cổ phiếu")
+selected_stocks = st.sidebar.text_area("Nhập mã cổ phiếu (cách nhau bởi dấu phẩy):", "")
 
-no_of_days = int(st.text_input("Enter the No of days to be predicted from current date : ","10"))
-future_results = predict_future(no_of_days,prev_100)
-future_results = np.array(future_results).reshape(-1,1)
-print(future_results)
-fig = plt.figure(figsize=(15, 6))
-plt.plot(pd.DataFrame(future_results), marker = 'o')
-for i in range(len(future_results)):
-    plt.text(i, future_results[i], int(future_results[i][0]))
-plt.xlabel('days')
-plt.ylabel('Close Price')
-plt.xticks(range(no_of_days))
-plt.yticks(range(min(list(map(int, future_results))), max(list(map(int, future_results))),100))
-plt.title('Closing Price of Google')
-st.pyplot(fig)
+if selected_stocks:
+    stocks = [stock.strip() for stock in selected_stocks.split(',')]
+else:
+    stocks = ["AAPL", "GOOG", "MSFT", "AMZN", "META", "TSLA", "NFLX", "NVDA", "BABA", "V"]
+
+@st.cache_data
+def load_data(stock, start, end):
+    return yf.download(stock, start=start, end=end)
+
+end_date = datetime.now()
+start_date = end_date - timedelta(days=365 * 20)
+
+data = []
+for stock in stocks:
+    stock_data = load_data(stock, start_date, end_date)
+    if stock_data.empty:
+        continue  
+
+    forecast_results = forecast_stock(stock, period="2y", interval='1d')
+    
+    recent_prices = stock_data['Close'][-3:].values
+    predicted_price = forecast_results['predictions'][0]  # Lấy giá trị dự đoán đầu tiên
+    mae = forecast_results['accuracy']
+    volume = stock_data['Volume'][-1]  
+
+    data.append([stock, *recent_prices, predicted_price, mae, volume])
+
+df = pd.DataFrame(data, columns=['Mã cổ phiếu', 'Giá ngày 1', 'Giá ngày 2', 'Giá ngày 3', 'Giá dự đoán', 'MAE', 'Volume'])
+df = df.sort_values(by='MAE', ascending=False)  # Sắp xếp theo MAE tăng dần
+
+st.subheader("Bảng thông tin cổ phiếu")
+st.dataframe(df.round(2))
+
+selected_stock = st.selectbox("Chọn mã cổ phiếu để xem chi tiết:", [""] + list(df['Mã cổ phiếu'].unique()))
+
+if selected_stock:
+    stock_data = load_data(selected_stock, start_date, end_date)
+
+    if stock_data.empty:
+        st.error(f"Không tìm thấy dữ liệu cho mã {selected_stock}. Vui lòng kiểm tra lại.")
+    else:
+        stock_data = stock_data.asfreq('D').ffill()
+        ts = stock_data[['Close']]
+
+        model = ARIMA(ts, order=(5, 1, 0))
+        model_fit = model.fit()
+
+        stock_data['Predicted_Close'] = model_fit.predict(start=0, end=len(ts)-1)
+
+        last_date = stock_data.index[-1]
+        next_n_days = pd.date_range(last_date + timedelta(days=1), periods=1, freq="B")
+
+        predictions_n_days = []
+        last_train_series = list(ts.Close)
+        for _ in range(1):
+            model = ARIMA(last_train_series, order=(5, 1, 0))
+            model_fit = model.fit()
+            next_day_prediction = model_fit.forecast(steps=1)[0]
+            
+            random_factor = np.random.normal(0, 1)  
+            next_day_prediction += random_factor
+            
+            predictions_n_days.append(next_day_prediction)
+            last_train_series.append(next_day_prediction)
+
+        for i in range(len(next_n_days)):
+            stock_data.loc[next_n_days[i], "Predicted_Close"] = predictions_n_days[i]
+            stock_data.loc[next_n_days[i], "Close"] = predictions_n_days[i]
+            for col in stock_data.columns:
+                if col != "Predicted_Close" and col != "Close":
+                    stock_data.loc[next_n_days[i], col] = np.nan 
+                    
+        st.subheader(f"Thông tin về {selected_stock}")
+        stock_info = yf.Ticker(selected_stock).info
+        st.write(f"**Tên công ty:** {stock_info['longName']}")
+        st.write(f"**Ngành:** {stock_info['industry']}")
+        st.write(f"**Vốn hóa:** {format_market_cap(stock_info['marketCap'])}")
+
+        with st.expander("Xem dữ liệu"):
+            st.dataframe(stock_data.round(2))
+
+        st.subheader(f"Biểu đồ giá đóng cửa của {selected_stock} (bao gồm dự đoán 1 ngày)")
+
+        ma_options = [50, 100, 200]
+        for ma in ma_options:
+            stock_data[f"MA_{ma}"] = stock_data["Close"].rolling(window=ma, min_periods=1).mean()
+
+        fig = px.line(
+            stock_data,
+            x=stock_data.index,
+            y=["Close", "Predicted_Close"] + [f"MA_{ma}" for ma in ma_options],
+            title=f"Giá đóng cửa của {selected_stock} (dự đoán 1 ngày)",
+        )
+        fig.update_layout(
+            autosize=True,
+            height=600 
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("Vui lòng chọn mã cổ phiếu để xem chi tiết.")

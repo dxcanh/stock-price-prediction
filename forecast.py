@@ -1,89 +1,40 @@
-import matplotlib.pyplot as plt
-import yfinance as yf
-import pandas as pd
-import numpy as np
-from statsmodels.tsa.seasonal import seasonal_decompose
 import pmdarima as pm
 from statsmodels.tsa.arima.model import ARIMA
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import mean_absolute_error
+import yfinance as yf
 
-code = input()
+def forecast_stock(stock, period="2y", interval='1d'):
+    try:
+        df = yf.download(stock, period=period, interval=interval)
+        df = df.asfreq('D').ffill()
+        ts = df[['Close']]
 
-df = yf.download(code, period="2y", interval='1d')
-df = df.asfreq('D').ffill()
+        # Tìm bộ tham số tối ưu (p, d, q) cho mô hình ARIMA
+        model_autoARIMA = pm.auto_arima(ts, start_p=0, start_q=0,
+                                      test='adf',       # kiểm tra tính dừng của dữ liệu
+                                      max_p=3, max_q=3, # giá trị tối đa của p và q
+                                      m=1,              # tần suất của chuỗi thời gian (hàng ngày = 1)
+                                      d=None,           # để auto_arima tự tìm giá trị d tối ưu
+                                      seasonal=False,   # không có tính mùa vụ
+                                      start_P=0, 
+                                      D=0, 
+                                      trace=True,
+                                      error_action='ignore',  
+                                      suppress_warnings=True, 
+                                      stepwise=True)
 
-ts = df[['Close']]
+        # Huấn luyện mô hình ARIMA với tham số tối ưu
+        model = ARIMA(ts, order=model_autoARIMA.order)
+        model_fit = model.fit()
 
-# Plot giá cổ trong 2 năm qua
-# plt.figure(figsize=(10, 6))
-# plt.plot(ts.index, ts.values, label='Original data')
-# plt.legend()
-# plt.xlabel('Time')
-# plt.ylabel('Value (USD)', loc='top')
-# plt.show()
+        # Dự đoán giá đóng cửa cho ngày tiếp theo
+        forecast = model_fit.forecast(steps=1)
 
-cap = int(ts.size * .9)
-ts_train = ts.iloc[:cap]
-ts_test = ts.iloc[cap:]
+        # Tính toán độ chính xác của mô hình (MAE)
+        mae = mean_absolute_error(ts, model_fit.predict())
+        
+        return {'predictions': forecast, 'accuracy': mae}
 
-# # Chạy mô hình với một bộ (p, d, q) cụ thể
-# def check_model(tuple):
-#     predictions = []
-#     actual_labels = []
-#     train_series = list(ts_train.Close)
-#     test_series = list(ts_test.Close)
-
-#     for i in range(len(test_series)):
-#         model = ARIMA(train_series, order = tuple)
-#         model_fit = model.fit()
-#         forecast = model_fit.forecast(step=1)[0]
-#         predictions.append(forecast)
-#         actual_label = 1 if test_series[i] > train_series[-1] else 0
-#         actual_labels.append(actual_label)
-#         train_series.append(test_series[i])
-
-#     predicted_labels = [1 if predictions[i] > train_series[len(ts_train) + i - 1] else 0 for i in range(len(predictions))]
-
-#     # Đánh giá mô hình
-#     accuracy = accuracy_score(actual_labels, predicted_labels)
-#     precision = precision_score(actual_labels, predicted_labels)
-#     recall = recall_score(actual_labels, predicted_labels)
-#     f1 = f1_score(actual_labels, predicted_labels)
-#     conf_matrix = confusion_matrix(actual_labels, predicted_labels)
-
-#     print(f'Accuracy: {accuracy}')
-#     print(f'Precision: {precision}')
-#     print(f'Recall: {recall}')
-#     print(f'F1 Score: {f1}')
-#     print('Confusion Matrix:')
-#     print(conf_matrix)
-
-# Mô hình được chọn để quyết định là (p, d, q) = {(0, 1, 3), (2, 1, 3), (1, 1, 1)}
-# Dự kiến tính trung bình 3 dự đoán
-
-# Dự đoán biến động ngày hôm sau theo 1 tuple
-# pdq = (0, 1, 3)
-# model = ARIMA(train_series, order = (2, 1, 2))
-# model_fit = model.fit()
-# final_prediction = model_fit.forecast()
-# final_label = 'Up' if final_prediction > test_series[-1] else 'Down'
-# delta = abs(1 - final_prediction/test_series[-1])
-# final_label, delta
-
-# Dự đoán biến động ngày hôm sau theo trung bình 3 tuple
-pdq = [(0, 1, 3), (2, 1, 3), (1, 1, 1)]
-train_series = list(ts.Close)
-test_series = list(ts.Close)
-delta = 0
-for i in range(len(pdq)):
-    model = ARIMA(train_series, order = pdq[i])
-    model_fit = model.fit()
-    prediction = model_fit.forecast()[0]
-    delta += prediction
-final_prediction = delta / 3
-percentage = abs(1 - final_prediction / test_series[-1])
-final_label = 'Up' if final_prediction > test_series[-1] else 'Down'
-print(final_label, percentage)
-
-
-
+    except Exception as e:
+        print(f"Lỗi khi dự đoán {stock}: {e}")
+        return {'predictions': [], 'accuracy': None}
