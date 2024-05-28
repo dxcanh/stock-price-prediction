@@ -80,7 +80,7 @@ def load_data(stock, start, end):
     return yf.download(stock, start=start, end=end)
 
 @hide_st_cache_deprecation_warning
-@st.cache
+@st.cache(hash_funcs={ARIMA: lambda _: None})
 def predict_and_visualize(selected_stock, stock_data):
     stock_data = stock_data.asfreq('D').ffill()
     ts = stock_data[['Close']]
@@ -156,13 +156,13 @@ df.index = range(1, len(df) + 1)
 st.subheader("Bảng thông tin cổ phiếu")
 def color_comparison(row):
     color = 'white'
-    if row['27-05-2024'] > row['24-05-2024']:
+    if row[recent_dates_headers[3]] > row[recent_dates_headers[2]]:
         color = '#00FF00'
     else:
         color = 'red'
     return ['color: white'] * (len(row) - 1) + [f'color: {color}']
 
-styled_df = df.style.apply(color_comparison, axis=1, subset=['24-05-2024', '27-05-2024'])
+styled_df = df.style.apply(color_comparison, axis=1, subset=[recent_dates_headers[2], recent_dates_headers[3]])
 st.dataframe(styled_df)
 
 selected_stock = st.selectbox("Chọn mã cổ phiếu để xem chi tiết:", [""] + list(df['Mã cổ phiếu'].unique()))
@@ -171,10 +171,8 @@ if selected_stock:
     stock_data = load_data(selected_stock, start_date, end_date)
     
     if stock_data.empty:
-        st.error(f"Không tìm thấy dữ liệu cho mã {selected_stock}. Vui lòng kiểm tra lại.")
+        st.error(f"Không tìm thấy dữ liệu cho mã {selected_stock}. Vui lòng thử lại")
     else:
-        predicted_stock_data, accuracy = predict_and_visualize(selected_stock, stock_data)
-
         st.subheader(f"Thông tin về {selected_stock}")
         stock_info = yf.Ticker(selected_stock).info
         st.write(f"**Tên công ty:** {stock_info['longName']}")
@@ -182,15 +180,15 @@ if selected_stock:
         st.write(f"**Vốn hóa:** {format_market_cap(stock_info['marketCap'])}")
 
         with st.expander("Xem dữ liệu"):
-            st.dataframe(predicted_stock_data.round(2))
+            st.dataframe(stock_data.round(2))
 
-        st.subheader(f"Biểu đồ giá {selected_stock}")
-
+        st.subheader(f"Biểu đồ giá đóng cửa của {selected_stock} (bao gồm dự đoán 1 ngày)")
+        
         ma_options = [50, 100, 200]
         line_visibility = {}
         for ma in ma_options:
             col_name = f"MA_{ma}"
-            predicted_stock_data[col_name] = predicted_stock_data["Close"].rolling(window=ma, min_periods=1).mean()
+            stock_data[col_name] = stock_data["Close"].rolling(window=ma, min_periods=1).mean()
             line_visibility[col_name] = st.checkbox(f"Hiển thị {col_name}", value=True)
 
         ma_colors = ['#E6C300', '#EC5840', '#5CD07F']
@@ -198,11 +196,11 @@ if selected_stock:
         fig = go.Figure()
 
         fig.add_trace(go.Candlestick(
-            x=predicted_stock_data.index,
-            open=predicted_stock_data['Open'],
-            high=predicted_stock_data['High'],
-            low=predicted_stock_data['Low'],
-            close=predicted_stock_data['Close'],
+            x=stock_data.index,
+            open=stock_data['Open'],
+            high=stock_data['High'],
+            low=stock_data['Low'],
+            close=stock_data['Close'],
             name="Giá",
             increasing_line_color='green', 
             decreasing_line_color='red',
@@ -213,8 +211,8 @@ if selected_stock:
             col_name = f"MA_{ma}"
             if line_visibility[col_name]:
                 fig.add_trace(go.Scatter(
-                    x=predicted_stock_data.index,
-                    y=predicted_stock_data[col_name],
+                    x=stock_data.index,
+                    y=stock_data[col_name],
                     mode='lines',
                     name=col_name,
                     line=dict(color=ma_colors[i], width=1)
@@ -223,9 +221,8 @@ if selected_stock:
         fig.update_layout(
             xaxis_title="Ngày",
             yaxis_title="Giá (USD)",
-            showlegend=True,
-            margin=dict(l=0, r=0, t=30, b=0),
-            width=1200,
+            xaxis_rangeslider_visible=True, 
+            yaxis_autorange=True,
             xaxis=dict(
                 rangeselector=dict(
                     buttons=list([
@@ -238,11 +235,11 @@ if selected_stock:
                     ])
                 ),
                 rangeslider=dict(visible=True),
-                type="date",
+                type="date"
             ),
-            yaxis=dict(
-                fixedrange=False
-            )
+            showlegend=True,
+            margin=dict(l=0, r=0, t=30, b=0),
+            width=1200,
         )
 
         st.plotly_chart(fig)
