@@ -10,7 +10,7 @@ from Forecast import forecast_stock
 st.set_page_config(
     page_title="Dự đoán giá cổ phiếu",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
@@ -153,17 +153,31 @@ df = pd.DataFrame(data, columns=['Mã cổ phiếu', recent_dates_headers[0], re
 df = df.sort_values(by='Độ chính xác', ascending=False)
 df.index = range(1, len(df) + 1)
 
+
 st.subheader("Bảng thông tin cổ phiếu")
+
 def color_comparison(row):
     color = 'white'
+
+    
     if row[recent_dates_headers[3]] > row[recent_dates_headers[2]]:
         color = '#00FF00'
     else:
         color = 'red'
-    return ['color: white'] * (len(row) - 1) + [f'color: {color}']
+        
+    return [] * (len(row) - 1) + [f'color: {color}']
 
 styled_df = df.style.apply(color_comparison, axis=1, subset=[recent_dates_headers[2], recent_dates_headers[3]])
-st.dataframe(styled_df)
+
+show_styled_df = styled_df
+st.dataframe(show_styled_df.format({
+    recent_dates_headers[0]: "{:.2f}",
+    recent_dates_headers[1]: "{:.2f}",
+    recent_dates_headers[2]: "{:.2f}",
+    recent_dates_headers[3]: "{:.2f}",
+    'Độ chính xác': "{:.3f}",
+    'Volume': "{:.2f}"
+}))
 
 selected_stock = st.selectbox("Chọn mã cổ phiếu để xem chi tiết:", [""] + list(df['Mã cổ phiếu'].unique()))
 
@@ -256,6 +270,7 @@ if selected_stock:
                 rangeslider=dict(visible=True),
                 type="date",
                 fixedrange=False,
+                range=[(end_date - timedelta(days=365)).strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')],
             ),
             yaxis=dict(
                 autorange=True,  
