@@ -221,8 +221,6 @@ if selected_stock:
         fig.update_layout(
             xaxis_title="Ngày",
             yaxis_title="Giá (USD)",
-            xaxis_rangeslider_visible=True, 
-            yaxis_autorange=True,
             xaxis=dict(
                 rangeselector=dict(
                     buttons=list([
@@ -235,11 +233,19 @@ if selected_stock:
                     ])
                 ),
                 rangeslider=dict(visible=True),
-                type="date"
+                type="date",
+                fixedrange=False
             ),
+            yaxis=dict(
+                autorange=True,
+                fixedrange=False,
+                anchor="y",  
+            ),
+            dragmode='pan',  
             showlegend=True,
             margin=dict(l=0, r=0, t=30, b=0),
             width=1200,
+            height=800,  # Increase the height of the chart 
         )
 
         st.plotly_chart(fig)
