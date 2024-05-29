@@ -158,14 +158,13 @@ st.subheader("Bảng thông tin cổ phiếu")
 
 def color_comparison(row):
     color = 'white'
-
     
     if row[recent_dates_headers[3]] > row[recent_dates_headers[2]]:
         color = '#00FF00'
     else:
         color = 'red'
         
-    return [] * (len(row) - 1) + [f'color: {color}']
+    return ['color: white'] * (len(row) - 1) + [f'color: {color}']
 
 styled_df = df.style.apply(color_comparison, axis=1, subset=[recent_dates_headers[2], recent_dates_headers[3]])
 
