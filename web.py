@@ -167,6 +167,26 @@ st.dataframe(styled_df)
 
 selected_stock = st.selectbox("Chọn mã cổ phiếu để xem chi tiết:", [""] + list(df['Mã cổ phiếu'].unique()))
 
+def update_y_axis_range(trace, layout_update):
+    if 'xaxis.range[0]' in layout_update or 'xaxis.range[1]' in layout_update:
+        x_range = fig.layout.xaxis.range
+        if x_range is not None:
+            filtered_data = stock_data.loc[(stock_data.index >= x_range[0]) & (stock_data.index <= x_range[1])]
+            y_min = filtered_data[['Low', 'MA_50', 'MA_100', 'MA_200']].min().min()
+            y_max = filtered_data[['High', 'MA_50', 'MA_100', 'MA_200']].max().max()
+            
+            y_range = y_max - y_min
+            
+            y_mean = (y_min + y_max) / 2
+            
+            y_distance = max(y_mean - y_min, y_max - y_mean)
+            
+            y_min_new = y_mean - y_distance * 1.1
+            y_max_new = y_mean + y_distance * 1.1
+            
+            fig.update_yaxes(range=[y_min_new, y_max_new])
+
+
 if selected_stock:
     stock_data = load_data(selected_stock, start_date, end_date)
     
@@ -219,6 +239,7 @@ if selected_stock:
                 ))
 
         fig.update_layout(
+            title='',
             xaxis_title="Ngày",
             yaxis_title="Giá (USD)",
             xaxis=dict(
@@ -234,20 +255,22 @@ if selected_stock:
                 ),
                 rangeslider=dict(visible=True),
                 type="date",
-                fixedrange=False
+                fixedrange=False,
             ),
             yaxis=dict(
-                autorange=True,
+                autorange=True,  
                 fixedrange=False,
-                anchor="y",  
+                anchor="x",
             ),
             dragmode='pan',  
             showlegend=True,
             margin=dict(l=0, r=0, t=30, b=0),
             width=1200,
-            height=800,  # Increase the height of the chart 
+            height=800,  
         )
+        
+        fig.layout.on_change(update_y_axis_range, 'xaxis.range')
 
-        st.plotly_chart(fig)
+        st.plotly_chart(fig, config={'editable': True}, use_container_width=True)
 else:
     st.warning("Vui lòng chọn mã cổ phiếu để xem chi tiết.")
