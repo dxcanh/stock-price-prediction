@@ -75,49 +75,52 @@ def hide_st_cache_deprecation_warning(func):
     return wrapper
 
 @hide_st_cache_deprecation_warning
-@st.cache_data
-def load_data(stock, start, end):
-    return yf.download(stock, start=start, end=end)
+@st.cache(persist=True)
+def predict_stock_prices(stocks, start_date, end_date):
+    predicted_data = {}
+    for stock in stocks:
+        stock_data = yf.download(stock, start=start_date, end=end_date)
+        if stock_data.empty:
+            continue
 
-@hide_st_cache_deprecation_warning
-@st.cache(hash_funcs={ARIMA: lambda _: None})
-def predict_and_visualize(selected_stock, stock_data):
-    stock_data = stock_data.asfreq('D').ffill()
-    ts = stock_data[['Close']]
+        stock_data = stock_data.asfreq('D').ffill()
+        ts = stock_data[['Close']]
 
-    model = ARIMA(ts, order=(5, 1, 0))
-    model_fit = model.fit()
-
-    stock_data['Predicted_Close'] = model_fit.predict(start=0, end=len(ts)-1)
-
-    last_date = stock_data.index[-1]
-    next_n_days = pd.date_range(last_date + timedelta(days=1), periods=1, freq="B")
-
-    predictions_n_days = []
-    last_train_series = list(ts.Close)
-    for _ in range(1):
-        model = ARIMA(last_train_series, order=(5, 1, 0))
+        model = ARIMA(ts, order=(5, 1, 0))
         model_fit = model.fit()
-        next_day_prediction = model_fit.forecast(steps=1)[0]
-        
-        random_factor = np.random.normal(0, 1)
-        next_day_prediction += random_factor
-        
-        predictions_n_days.append(next_day_prediction)
-        last_train_series.append(next_day_prediction)
 
-    for i in range(len(next_n_days)):
-        stock_data.loc[next_n_days[i], "Predicted_Close"] = predictions_n_days[i]
-        stock_data.loc[next_n_days[i], "Close"] = predictions_n_days[i]
-        for col in stock_data.columns:
-            if col != "Predicted_Close" and col != "Close":
-                stock_data.loc[next_n_days[i], col] = np.nan 
-    
-    # Dự đoán và tính toán độ chính xác
-    forecast_results = forecast_stock(selected_stock, period="2y", interval='1d')
-    accuracy = forecast_results['accuracy']
-    
-    return stock_data, accuracy
+        stock_data['Predicted_Close'] = model_fit.predict(start=0, end=len(ts)-1)
+
+        last_date = stock_data.index[-1]
+        next_n_days = pd.date_range(last_date + timedelta(days=1), periods=1, freq="B")
+
+        predictions_n_days = []
+        last_train_series = list(ts.Close)
+        for _ in range(1):
+            model = ARIMA(last_train_series, order=(5, 1, 0))
+            model_fit = model.fit()
+            next_day_prediction = model_fit.forecast(steps=1)[0]
+
+            random_factor = np.random.normal(0, 1)
+            next_day_prediction += random_factor
+
+            predictions_n_days.append(next_day_prediction)
+            last_train_series.append(next_day_prediction)
+
+        for i in range(len(next_n_days)):
+            stock_data.loc[next_n_days[i], "Predicted_Close"] = predictions_n_days[i]
+            stock_data.loc[next_n_days[i], "Close"] = predictions_n_days[i]
+            for col in stock_data.columns:
+                if col != "Predicted_Close" and col != "Close":
+                    stock_data.loc[next_n_days[i], col] = np.nan
+
+        # Dự đoán và tính toán độ chính xác
+        forecast_results = forecast_stock(stock, period="2y", interval='1d')
+        accuracy = forecast_results['accuracy']
+
+        predicted_data[stock] = (stock_data, accuracy)
+
+    return predicted_data
 
 end_date = datetime.now()
 start_date = end_date - timedelta(days=365 * 20)
@@ -132,22 +135,19 @@ if selected_stocks:
 else:
     stocks = ["AAPL", "GOOG", "MSFT", "AMZN", "META", "TSLA", "NFLX", "NVDA", "BABA", "V"]
 
-data = []
-for stock in stocks:
-    stock_data = load_data(stock, start_date, end_date)
-    if stock_data.empty:
-        continue  
+predicted_data = predict_stock_prices(stocks, start_date, end_date)
 
-    predicted_stock_data, accuracy = predict_and_visualize(stock, stock_data)
-    
-    recent_prices = predicted_stock_data['Close'][-4:-1].values
-    recent_dates = predicted_stock_data.index[-4:-1].strftime('%Y-%m-%d').tolist()
-    predicted_price = predicted_stock_data['Predicted_Close'].iloc[-1]
-    volume = predicted_stock_data['Volume'].iloc[-2]  
+# Hiển thị bảng thông tin cổ phiếu
+data = []
+for stock, (stock_data, accuracy) in predicted_data.items():
+    recent_prices = stock_data['Close'][-4:-1].values
+    recent_dates = stock_data.index[-4:-1].strftime('%Y-%m-%d').tolist()
+    predicted_price = stock_data['Predicted_Close'].iloc[-1]
+    volume= stock_data['Volume'].iloc[-2]  
 
     data.append([stock, *recent_prices, predicted_price, accuracy, volume])
 
-recent_dates_headers = predicted_stock_data.index[-4:].strftime('%d-%m-%Y').tolist()
+recent_dates_headers = stock_data.index[-4:].strftime('%d-%m-%Y').tolist()
 
 df = pd.DataFrame(data, columns=['Mã cổ phiếu', recent_dates_headers[0], recent_dates_headers[1], recent_dates_headers[2], recent_dates_headers[3], 'Độ chính xác', 'Volume'])
 df = df.sort_values(by='Độ chính xác', ascending=False)
@@ -188,7 +188,7 @@ def update_y_axis_range(trace, layout_update):
 
 
 if selected_stock:
-    stock_data = load_data(selected_stock, start_date, end_date)
+    stock_data, accuracy = predicted_data[selected_stock]
     
     if stock_data.empty:
         st.error(f"Không tìm thấy dữ liệu cho mã {selected_stock}. Vui lòng thử lại")
